@@ -19,6 +19,7 @@ import { registerUsageRoutes } from './api/usage'
 import { registerFacilitatorRoutes } from './api/facilitator'
 import { registerPriceRoutes } from './routes/price'
 import { registerVolumeRoutes } from './routes/volumes'
+import { registerBookRoutes } from './routes/book'
 import { registerSpreadsRoutes } from './routes/spreads'
 import { registerBenchmarkRoutes } from './routes/benchmark'
 import { registerOracleRoutes } from './routes/oracle'
@@ -26,7 +27,9 @@ import { registerBasketRoutes } from './routes/basket'
 import { registerDiscoveryRoutes } from './routes/discovery'
 import { registerVenueRoutes } from './routes/venues'
 import { registerSettleRoute } from './routes/facilitator'
+import { registerCachePolicy } from './middleware/cachePolicy'
 import { getMetrics } from './metrics'
+import { loggerOptions, createDestination } from './logger'
 
 export interface BuildAppOptions {
   /**
@@ -51,7 +54,11 @@ export interface BuildAppOptions {
  * The returned app is NOT listening; the caller calls `app.listen(...)`.
  */
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: { level: 'warn' } })
+  // Share the structured logger configuration (level, redaction, dev pretty
+  // printing) with Fastify so `req.log` is scrubbed the same way.
+  const app = Fastify({
+    logger: { ...loggerOptions(), stream: createDestination() },
+  })
 
   // Capture route registrations first, so it observes every route below
   // (including the ones registered by encapsulated plugins such as Mercurius).
@@ -124,6 +131,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(registerFacilitatorRoutes)
 
   await app.register(registerX402)
+
+  // Per-route Cache-Control policy (issue #266) — every response carries a
+  // deliberate Cache-Control header. Registered before the routes so the
+  // onSend hook observes all of them.
+  await app.register(registerCachePolicy)
+
   await registerRESTRoutes(app)
   await registerWebhookRoutes(app)
   await registerCandleRoutes(app)
@@ -132,6 +145,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await registerHistoryRoutes(app)
   await registerPriceRoutes(app)
   await registerVolumeRoutes(app)
+  await registerBookRoutes(app)
   await registerSpreadsRoutes(app)
   await registerBenchmarkRoutes(app)
   await registerOracleRoutes(app)
